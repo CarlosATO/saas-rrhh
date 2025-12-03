@@ -2,29 +2,20 @@ import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { usePendingRequests } from '../hooks/usePendingRequests'; // <--- IMPORTAR
-
+import { usePendingRequests } from '../hooks/usePendingRequests';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 const PORTAL_URL = import.meta.env.VITE_PORTAL_URL;
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// --- FUNCIÓN HELPER: CREAR USUARIO AUTH ---
-const createClient = (url, key, options) => {
-    // Importación dinámica o uso directo de la librería si está disponible globalmente
-    // Para simplificar en este archivo, asumimos que supabase-js maneja esto,
-    // pero aquí recreamos la lógica simple de cliente temporal.
-    // Nota: En Vite, es mejor importar { createClient } from '@supabase/supabase-js' arriba.
-    return require('@supabase/supabase-js').createClient(url, key, options);
-};
-// Corrección: Importamos createClient arriba correctamente, aquí solo usamos la referencia.
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-
+// --- FUNCIÓN HELPER: Limpiar RUT ---
 const cleanRut = (value) => {
     if (!value) return '';
     return value.replace(/\./g, '').trim().toLowerCase();
 }
 
+// --- FUNCIÓN HELPER: CREAR USUARIO AUTH ---
 const createWorkerAuth = async (rut, pin, name) => {
     const tempClient = createSupabaseClient(SUPABASE_URL, SUPABASE_KEY, {
         auth: {
@@ -171,7 +162,7 @@ const EmployeeDocuments = ({ employeeId, organizationId }) => {
     );
 };
 
-// --- COMPONENTE AUXILIAR 3: PANEL LATERAL (CORREGIDO LAYOUT) ---
+// --- COMPONENTE AUXILIAR 3: PANEL LATERAL ---
 const EmployeeSidePanel = ({ 
     currentEmployee, editData, setEditData, handleSave, handleDelete, handleClose, 
     uploading, masters, organizationId, handleFileUpload
@@ -191,17 +182,13 @@ const EmployeeSidePanel = ({
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex justify-end" onClick={handleClose}>
-            {/* CORRECCIÓN: Usamos flex-col y h-full en el contenedor blanco */}
-            <div className="w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
-                
-                {/* HEADER (FIJO) */}
-                <div className="bg-white p-5 border-b flex justify-between items-center flex-none">
+            <div className="w-full max-w-2xl bg-white h-full overflow-y-auto shadow-2xl flex flex-col" onClick={e => e.stopPropagation()}>
+                <div className="sticky top-0 bg-white p-5 border-b flex justify-between items-center z-20">
                     <h2 className="text-xl font-bold">{isNew ? 'Nuevo Empleado' : `${editData.first_name} ${editData.last_name}`}</h2>
                     <button onClick={handleClose} className="text-2xl text-gray-400">&times;</button>
                 </div>
                 
-                {/* TABS (FIJOS) */}
-                <div className="flex bg-gray-50 border-b flex-none overflow-x-auto">
+                <div className="flex bg-gray-50 border-b sticky top-[69px] z-20 overflow-x-auto">
                     {['personal', 'contract', 'social', 'acred', 'files'].map(tab => (
                         <button key={tab} onClick={() => setActiveTab(tab)}
                             className={`flex-shrink-0 py-3 px-4 text-xs font-bold uppercase ${activeTab === tab ? 'bg-white text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:bg-gray-100'}`}>
@@ -214,8 +201,7 @@ const EmployeeSidePanel = ({
                     ))}
                 </div>
 
-                {/* CONTENIDO (SCROLLABLE) - Aquí está el arreglo: flex-grow y overflow-y-auto */}
-                <div className="flex-grow overflow-y-auto p-6">
+                <div className="p-6 flex-grow">
                     {activeTab === 'personal' && (
                         <div className="grid grid-cols-2 gap-4">
                              <div className="col-span-2 flex items-center gap-4 pb-4 border-b">
@@ -239,7 +225,6 @@ const EmployeeSidePanel = ({
 
                     {activeTab === 'contract' && (
                         <div className="space-y-4">
-                            {/* --- LOGIN DE TRABAJADOR --- */}
                             <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-200">
                                 <h4 className="text-sm font-bold text-indigo-800 mb-2">🔐 Acceso Reloj Control</h4>
                                 <div className="grid grid-cols-1 gap-2">
@@ -354,16 +339,14 @@ const EmployeeSidePanel = ({
 const EmployeeList = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
-    
-    // Usar el hook
-    const pendingCount = usePendingRequests(user); 
-    
+    const pendingCount = usePendingRequests(user);
     const [employees, setEmployees] = useState([]);
     const [loading, setLoading] = useState(true);
     const [currentEmployee, setCurrentEmployee] = useState(null);
     const [editData, setEditData] = useState({});
     const [uploading, setUploading] = useState(false);
     const [organizationId, setOrganizationId] = useState(null);
+    const [showEmployeeList, setShowEmployeeList] = useState(false);
     
     const [masters, setMasters] = useState({ 
         jobs: [], departments: [], maritalStatus: [], pensionProviders: [], healthProviders: [], 
@@ -458,64 +441,193 @@ const EmployeeList = () => {
         } catch (error) { alert(error.message); } finally { setUploading(false); }
     };
 
+    const handleDelete = async () => {
+        if(!window.confirm("¿Eliminar?")) return;
+        try {
+            await supabase.from('rrhh_employees').delete().eq('id', currentEmployee.id);
+            handleClose(); initData();
+        } catch (error) { alert(error.message); }
+    };
+
     return (
-        <div className="min-h-screen bg-slate-50 p-8">
-            <div className="max-w-7xl mx-auto">
-                <div className="flex justify-between items-center mb-8">
-                    <div><h1 className="text-3xl font-bold text-slate-900">Personal</h1><p className="text-slate-500">Gestión de RRHH</p></div>
-                    <div className="flex gap-2">
-                        {/* --- BOTÓN NUEVO --- */}
-                        <button 
-                            onClick={() => navigate('/attendance')} 
-                            className="px-3 py-2 bg-emerald-600 text-white border border-emerald-700 rounded hover:bg-emerald-700 text-sm font-medium shadow-sm transition-colors"
-                        >
-                            📅 Control Asistencia
-                        </button>
-                        {/* ------------------- */}
-
-                        {/* Botón Gestión de Ausencias con Alerta */}
-                        <button 
-                            onClick={() => navigate('/absences')} 
-                            className="relative px-3 py-2 bg-purple-600 text-white border border-purple-700 rounded hover:bg-purple-700 text-sm font-medium shadow-sm transition-colors flex items-center gap-2"
-                        >
-                            <span>🗓️ Ausencias</span>
-                            {pendingCount > 0 && (
-                                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full border-2 border-white shadow-sm animate-pulse">
-                                    {pendingCount}
-                                </span>
-                            )}
-                        </button>
-
-                        <button onClick={() => navigate('/settings/shifts')} className="px-3 py-2 bg-white border rounded hover:bg-gray-50 text-sm font-medium">🕒 Turnos</button>
-                        <button onClick={() => navigate('/settings/subcontractors')} className="px-3 py-2 bg-white border rounded hover:bg-gray-50 text-sm font-medium">🏢 Contratistas</button>
-                        <button onClick={() => navigate('/settings/courses')} className="px-3 py-2 bg-white border rounded hover:bg-gray-50 text-sm font-medium">🎓 Cursos</button>
-                        <button onClick={() => window.location.href = PORTAL_URL} className="px-3 py-2 bg-white border rounded hover:bg-gray-50 text-sm font-medium">⬅ Portal</button>
-                        <button onClick={handleOpenCreate} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold shadow">+ Nuevo</button>
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">
+            
+            {/* TOPBAR SIMPLE */}
+            <div className="bg-white border-b border-slate-200 shadow-sm">
+                <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-700 rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-md">
+                            👥
+                        </div>
+                        <div>
+                            <h1 className="text-xl font-bold text-slate-900">Portal de Recursos Humanos</h1>
+                            <p className="text-xs text-slate-500">SOMYL S.A.</p>
+                        </div>
                     </div>
-                </div>
+                    
+                    {showEmployeeList ? (
+                        <div className="flex gap-3">
+                            {/* BOTÓN LRE (Nuevo) */}
+                            <button 
+                                onClick={() => navigate('/payroll/lre')} 
+                                className="px-3 py-2 bg-indigo-100 text-indigo-800 border border-indigo-200 rounded-lg hover:bg-indigo-200 text-sm font-bold shadow-sm transition-all"
+                            >
+                                📚 Revisar Libro LRE (DT)
+                            </button>
 
-                <div className="bg-white rounded shadow overflow-hidden">
-                    <table className="w-full text-left">
-                        <thead className="bg-slate-100 text-xs uppercase text-slate-500 font-bold">
-                            <tr><th className="p-4">Nombre</th><th className="p-4">Cargo</th><th className="p-4">Empresa</th><th className="p-4">Estado</th></tr>
-                        </thead>
-                        <tbody className="divide-y">
-                            {employees.map(e => (
-                                <tr key={e.id} onClick={() => handleOpenEdit(e)} className="hover:bg-blue-50 cursor-pointer transition-colors">
-                                    <td className="p-4 font-medium">{e.first_name} {e.last_name}</td>
-                                    <td className="p-4 text-sm text-gray-600">{e.job?.name || '-'}</td>
-                                    <td className="p-4 text-sm">{e.is_subcontracted ? <span className="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs font-bold">Externo</span> : <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-bold">Planta</span>}</td>
-                                    <td className="p-4 text-xs text-gray-400">Activo</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            {/* BOTÓN CONTROL ASISTENCIA (Con Alerta) */}
+                            <button 
+                                onClick={() => navigate('/attendance')} 
+                                className="relative px-3 py-2 bg-emerald-600 text-white border border-emerald-700 rounded-lg hover:bg-emerald-700 text-sm font-medium shadow-sm transition-colors flex items-center gap-2"
+                            >
+                                <span>📅 Control Asistencia</span>
+                                {pendingCount > 0 && (
+                                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full border-2 border-white shadow-sm animate-pulse">
+                                        {pendingCount}
+                                    </span>
+                                )}
+                            </button>
+
+                            <button 
+                                onClick={() => setShowEmployeeList(false)} 
+                                className="px-4 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 font-medium text-sm transition-all duration-200 flex items-center gap-2"
+                            >
+                                <span>←</span>
+                                Portal RRHH
+                            </button>
+                        </div>
+                    ) : (
+                        <button 
+                            onClick={() => window.location.href = PORTAL_URL} 
+                            className="px-4 py-2 bg-slate-100 text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-200 font-medium text-sm transition-all duration-200 flex items-center gap-2"
+                        >
+                            <span>⬅</span>
+                            Volver al Portal
+                        </button>
+                    )}
                 </div>
+            </div>
+
+            {/* CONTENIDO PRINCIPAL */}
+            <div className="max-w-7xl mx-auto px-6 py-12">
+                
+                {showEmployeeList ? (
+                    <>
+                        <div className="flex items-center justify-between mb-6">
+                            <div>
+                                <h2 className="text-2xl font-bold text-slate-900">Lista de Empleados</h2>
+                                <p className="text-sm text-slate-500">Gestión de personal</p>
+                            </div>
+                            <button 
+                                onClick={handleOpenCreate} 
+                                className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 font-semibold shadow-md hover:shadow-lg transition-all duration-200 flex items-center gap-2"
+                            >
+                                <span className="text-lg">+</span>
+                                Nuevo Empleado
+                            </button>
+                        </div>
+
+                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div className="overflow-x-auto">
+                                <table className="w-full">
+                                    <thead>
+                                        <tr className="bg-gradient-to-r from-slate-50 to-slate-100 border-b border-slate-200">
+                                            <th className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Empleado</th>
+                                            <th className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Cargo</th>
+                                            <th className="px-6 py-4 text-center text-xs font-bold text-slate-600 uppercase tracking-wider">Tipo</th>
+                                            <th className="px-6 py-4 text-center text-xs font-bold text-slate-600 uppercase tracking-wider">Estado</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {loading ? (
+                                            <tr><td colSpan="4" className="px-6 py-12 text-center text-slate-400">Cargando...</td></tr>
+                                        ) : employees.length === 0 ? (
+                                            <tr><td colSpan="4" className="px-6 py-12 text-center text-slate-400">No hay empleados</td></tr>
+                                        ) : (
+                                            employees.map(e => (
+                                                <tr key={e.id} onClick={() => handleOpenEdit(e)} className="hover:bg-blue-50 cursor-pointer transition-all duration-150 group">
+                                                    <td className="px-6 py-4">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-sm">
+                                                                {e.first_name?.[0]}{e.last_name?.[0]}
+                                                            </div>
+                                                            <div>
+                                                                <div className="font-semibold text-slate-900 group-hover:text-blue-600 transition-colors">{e.first_name} {e.last_name}</div>
+                                                                <div className="text-xs text-slate-400 font-mono">{e.rut || 'Sin RUT'}</div>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4"><span className="text-sm text-slate-600">{e.job?.name || '-'}</span></td>
+                                                    <td className="px-6 py-4 text-center">
+                                                        {e.is_subcontracted ? <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-700 border border-orange-200">Subcontratado</span> : <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200">Planta</span>}
+                                                    </td>
+                                                    <td className="px-6 py-4 text-center"><span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200">Activo</span></td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {employees.length > 0 && <div className="bg-slate-50 px-6 py-3 border-t border-slate-200"><p className="text-xs text-slate-500">Mostrando <span className="font-semibold text-slate-700">{employees.length}</span> empleado{employees.length !== 1 ? 's' : ''}</p></div>}
+                        </div>
+                    </>
+                ) : (
+                    // VISTA DE MÓDULOS (DASHBOARD RRHH)
+                    <>
+                        <div className="mb-8 text-center">
+                            <h2 className="text-3xl font-bold text-slate-900 mb-2">Tus Módulos</h2>
+                            <p className="text-slate-600">Selecciona un módulo para comenzar</p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            
+                            <div onClick={() => setShowEmployeeList(true)} className="bg-white rounded-xl shadow-md hover:shadow-xl border border-slate-200 p-6 cursor-pointer transition-all duration-300 hover:scale-105 group h-[160px] flex flex-col">
+                                <div className="w-14 h-14 bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300 shadow-lg"><span className="text-2xl">👥</span></div>
+                                <h3 className="text-lg font-bold text-slate-900 mb-1">Empleados</h3><p className="text-xs text-slate-500">Gestión de personal</p>
+                            </div>
+
+                            <div onClick={() => navigate('/attendance')} className="relative bg-white rounded-xl shadow-md hover:shadow-xl border border-slate-200 p-6 cursor-pointer transition-all duration-300 hover:scale-105 group h-[160px] flex flex-col">
+                                {pendingCount > 0 && <div className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full border-2 border-white shadow-lg animate-pulse">{pendingCount}</div>}
+                                <div className="w-14 h-14 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300 shadow-lg"><span className="text-2xl">📅</span></div>
+                                <h3 className="text-lg font-bold text-slate-900 mb-1">Asistencia</h3><p className="text-xs text-slate-500">Control de marcas</p>
+                            </div>
+
+                            <div onClick={() => navigate('/absences')} className="bg-white rounded-xl shadow-md hover:shadow-xl border border-slate-200 p-6 cursor-pointer transition-all duration-300 hover:scale-105 group h-[160px] flex flex-col">
+                                <div className="w-14 h-14 bg-gradient-to-br from-purple-400 to-purple-600 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300 shadow-lg"><span className="text-2xl">🗓️</span></div>
+                                <h3 className="text-lg font-bold text-slate-900 mb-1">Ausencias</h3><p className="text-xs text-slate-500">Vacaciones y permisos</p>
+                            </div>
+
+                            <div onClick={() => navigate('/payroll/settings')} className="bg-white rounded-xl shadow-md hover:shadow-xl border border-slate-200 p-6 cursor-pointer transition-all duration-300 hover:scale-105 group h-[160px] flex flex-col">
+                                <div className="w-14 h-14 bg-gradient-to-br from-slate-400 to-slate-600 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300 shadow-lg"><span className="text-2xl">💰</span></div>
+                                <h3 className="text-lg font-bold text-slate-900 mb-1">Parámetros</h3><p className="text-xs text-slate-500">Config. nómina</p>
+                            </div>
+
+                            <div onClick={() => navigate('/payroll/process')} className="bg-white rounded-xl shadow-md hover:shadow-xl border border-slate-200 p-6 cursor-pointer transition-all duration-300 hover:scale-105 group h-[160px] flex flex-col">
+                                <div className="w-14 h-14 bg-gradient-to-br from-indigo-400 to-indigo-600 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300 shadow-lg"><span className="text-2xl">🧮</span></div>
+                                <h3 className="text-lg font-bold text-slate-900 mb-1">Calcular</h3><p className="text-xs text-slate-500">Procesar nóminas</p>
+                            </div>
+
+                            <div className="bg-gradient-to-br from-slate-100 to-slate-200 rounded-xl shadow-md border border-slate-300 p-6 h-[160px] flex flex-col">
+                                <div className="flex items-center gap-2 mb-2 flex-shrink-0">
+                                    <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shadow-sm"><span className="text-xl">⚙️</span></div>
+                                    <h3 className="text-base font-bold text-slate-700">Config.</h3>
+                                </div>
+                                <div className="space-y-1 overflow-y-auto flex-1 pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+                                    <button onClick={() => navigate('/settings/shifts')} className="w-full text-left px-2 py-1 bg-white rounded text-[11px] text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-all font-medium">🕒 Turnos</button>
+                                    <button onClick={() => navigate('/settings/subcontractors')} className="w-full text-left px-2 py-1 bg-white rounded text-[11px] text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-all font-medium">🏢 Contratistas</button>
+                                    <button onClick={() => navigate('/settings/courses')} className="w-full text-left px-2 py-1 bg-white rounded text-[11px] text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-all font-medium">🎓 Cursos</button>
+                                    <button onClick={() => navigate('/settings/afp')} className="w-full text-left px-2 py-1 bg-white rounded text-[11px] text-slate-700 hover:bg-blue-50 hover:text-blue-700 transition-all font-medium">🏦 AFP</button>
+                                </div>
+                            </div>
+
+                        </div>
+                    </>
+                )}
             </div>
 
             <EmployeeSidePanel 
                 currentEmployee={currentEmployee} editData={editData} setEditData={setEditData}
-                handleSave={handleSave} handleClose={handleClose} uploading={uploading} 
+                handleSave={handleSave} handleDelete={handleDelete} handleClose={handleClose} uploading={uploading} 
                 masters={masters} organizationId={organizationId} handleFileUpload={handleFileUpload}
             />
         </div>
