@@ -3,13 +3,27 @@ import { supabase } from '../services/supabaseClient'
 
 const AuthContext = createContext()
 
+// URL del portal para redirección (Admin)
+const PORTAL_URL = import.meta.env.VITE_PORTAL_URL
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const handleSSO = async () => {
-      // 1. Verificar si ya existe una sesión activa en Supabase
+      
+      // --- 1. LISTA BLANCA (EXCEPCIONES) ---
+      // Si el usuario está intentando entrar al Login de Trabajadores,
+      // NO hacemos nada de seguridad. Dejamos que cargue la página.
+      if (window.location.pathname === '/worker-login') {
+          setLoading(false);
+          return;
+      }
+
+      // --- 2. Lógica Normal de Sesión ---
+      
+      // A. Verificar si ya existe una sesión activa
       const { data: { session: existingSession } } = await supabase.auth.getSession()
       
       if (existingSession) {
@@ -18,15 +32,14 @@ export const AuthProvider = ({ children }) => {
         return
       }
 
-      // 2. Si no hay sesión, buscamos el "regalo" (tokens) en la URL
+      // B. Si no hay sesión, buscamos tokens en la URL (SSO desde Portal)
       const hash = window.location.hash
       if (hash && hash.includes('access_token')) {
-        const params = new URLSearchParams(hash.substring(1)) // Quitamos el #
+        const params = new URLSearchParams(hash.substring(1))
         const accessToken = params.get('access_token')
         const refreshToken = params.get('refresh_token')
 
         if (accessToken && refreshToken) {
-          // Intentamos iniciar sesión con esos tokens
           const { data, error } = await supabase.auth.setSession({
             access_token: accessToken,
             refresh_token: refreshToken,
@@ -34,7 +47,6 @@ export const AuthProvider = ({ children }) => {
 
           if (!error && data.session) {
             setUser(data.session.user)
-            // Limpiamos la URL para que se vea bonita
             window.history.replaceState({}, document.title, window.location.pathname)
             setLoading(false)
             return
@@ -42,14 +54,12 @@ export const AuthProvider = ({ children }) => {
         }
       }
 
-      // 3. SI FALLA TODO (No sesión, no tokens) -> Expulsar al Portal
-      // IMPORTANTE: Cambia esta URL si tu portal está en otro lado
-      window.location.href = import.meta.env.VITE_PORTAL_URL
+      // C. SI FALLA TODO -> Expulsar al Portal (Login Administrativo)
+      window.location.href = PORTAL_URL
     }
 
     handleSSO()
 
-    // Escuchar cambios de sesión futuros
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
     })
@@ -60,11 +70,10 @@ export const AuthProvider = ({ children }) => {
   return (
     <AuthContext.Provider value={{ user, loading }}>
       {!loading ? children : (
-        // Loader bonito mientras verifica
         <div className="min-h-screen flex items-center justify-center bg-slate-50">
           <div className="text-center">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-slate-500 font-medium">Conectando con Portal...</p>
+            <p className="text-slate-500 font-medium">Verificando acceso...</p>
           </div>
         </div>
       )}
