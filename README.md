@@ -20,3 +20,4 @@ cd saas-rrhh
 npm run dev
 
 direccion reloj contro: http://localhost:5174/worker-login
+https://saas-rrhh-production.up.railway.app/worker-login
